@@ -1,4 +1,8 @@
 class BTreeNode:
+    '''
+    function does,input,output,side effects
+    benchmark,disk
+    '''
     def __init__(self, is_leaf=True):
         self.is_leaf = is_leaf
         self.keys = []
