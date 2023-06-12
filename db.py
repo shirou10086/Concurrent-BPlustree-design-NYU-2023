@@ -123,7 +123,7 @@ class BTree:
         if not child.is_leaf:
             new_child.children = child.children[t:2 * t]
             child.children = child.children[0:t]
-
+    '''
     def print_buffered_keys(self):
         print("Buffered keys in BTree:")
         self._print_buffered_keys(self.root)
@@ -138,6 +138,7 @@ class BTree:
         if not node.is_leaf:
             for child in node.children:
                 self._print_buffered_keys(child)
+    '''
 
 
 B_tree = BTree(3, 4)
@@ -145,5 +146,4 @@ B_tree = BTree(3, 4)
 keys = [10, 20, 5, 6, 12, 30, 7, 17]
 for key in keys:
     B_tree.insert(key)
-    B_tree.print_buffered_keys()
 B_tree.traverse(max_level=2)
