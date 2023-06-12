@@ -1,112 +1,149 @@
 class BTreeNode:
-    def __init__(self, t, is_leaf=True):
+    def __init__(self, is_leaf=True):
+        self.is_leaf = is_leaf
         self.keys = []
         self.children = []
-        self.is_leaf = is_leaf
-        self.t = t
+        self.buffer = []
 
-    def insert(self, key, t):
+    def add_to_buffer(self, key):
+        self.buffer.append(key)
+
+    def flush_buffer(self):
+        for key in self.buffer:
+            self.insert_non_full(key)
+        self.buffer = []
+
+    def insert_non_full(self, key):
+        i = len(self.keys) - 1
         if self.is_leaf:
-            self._insert_leaf(key)
+            self.keys.append(None)
+            while i >= 0 and key < self.keys[i]:
+                self.keys[i + 1] = self.keys[i]
+                i -= 1
+            self.keys[i + 1] = key
         else:
-            index = self._find_child_index(key)
-            child = self.children[index]
-            if len(child.keys) == 2 * t - 1:
-                self._split_child(index, t)
-                if key > self.keys[index]:
-                    index += 1
-            child.insert(key, t)
+            while i >= 0 and key < self.keys[i]:
+                i -= 1
+            i += 1
+            if len(self.keys) == (2 * t) - 1:  # 如果当前节点的键已满，将键添加到缓冲区
+                self.add_to_buffer(key)
+                if len(self.buffer) == (2 * t) - 1:  # 如果缓冲区满了，刷新缓冲区并进行节点分裂
+                    self.flush_buffer()
+                    self.split_child(i)
+            else:
+                if len(self.children[i].keys) == (2 * t) - 1:  # 如果子节点的键已满，先刷新子节点的缓冲区并进行节点分裂
+                    self.children[i].flush_buffer()
+                    self.split_child(i)
+                self.children[i].insert_non_full(key)  # 继续在子节点中插入键
 
-    def _insert_leaf(self, key):
-        index = 0
-        while index < len(self.keys) and self.keys[index] < key:
-            index += 1
-        self.keys.insert(index, key)
+    def split_child(self, i):
+        t = B_tree.t
+        child = self.children[i]
+        new_child = BTreeNode(child.is_leaf)
+        self.children.insert(i + 1, new_child)
+        self.keys.insert(i, child.keys[t - 1])
 
-    def _find_child_index(self, key):
-        index = 0
-        while index < len(self.keys) and key > self.keys[index]:
-            index += 1
-        return index
+        new_child.keys = child.keys[t:(2 * t) - 1]
+        child.keys = child.keys[0:t - 1]
 
-    def _split_child(self, index, t):
-        child = self.children[index]
-        new_child = BTreeNode(t=t, is_leaf=child.is_leaf)
-        self.keys.insert(index, child.keys[t - 1])
-        self.children.insert(index + 1, new_child)
-        new_child.keys = child.keys[t:]
-        child.keys = child.keys[:t - 1]
         if not child.is_leaf:
-            new_child.children = child.children[t:]
-            child.children = child.children[:t]
+            new_child.children = child.children[t:2 * t]
+            child.children = child.children[0:t]
 
-    def print_node(self):
-        print("Node Keys:", self.keys)
-        print("Is Leaf:", self.is_leaf)
-        print("Children:")
-        for child in self.children:
-            print(child.keys)
+
 
 class BTree:
-    def __init__(self, t):
-        self.root = BTreeNode(t=t, is_leaf=True)
+    def __init__(self, t, num_partitions):
+        self.root = BTreeNode(True)
         self.t = t
+        self.num_partitions = num_partitions
+        self.simulated_disk = [{} for _ in range(num_partitions)]
+
+    def _simple_hash(self, key):
+        return sum([ord(char) for char in str(key)]) % self.num_partitions
+
+    def traverse(self, node=None, level=1, max_level=2):
+        if node is None:
+            node = self.root
+
+        if level <= max_level:
+            print('Level:', level, 'Keys:', node.keys)
+
+            for child in node.children:
+                self.traverse(child, level + 1, max_level)
+        else:
+            hash_val = self._simple_hash(node.keys[0])
+            print(f'Hashed partition for level {level}: {hash_val}, Keys: {node.keys}')
+            # Simulate storing in disk by putting it in a dictionary
+            self.simulated_disk[hash_val][level] = node.keys
 
     def insert(self, key):
         root = self.root
         if len(root.keys) == (2 * self.t) - 1:
-            new_root = BTreeNode(t=self.t, is_leaf=False)
-            self.root = new_root
-            new_root.children.append(root)
-            new_root._split_child(0, self.t)
-            new_root.insert(key, self.t)
+            temp = BTreeNode()
+            self.root = temp
+            temp.children.insert(0, root)
+            temp.insert_non_full(key)
+            temp.flush_buffer()
+            self.split_child(temp, 0)
         else:
-            root.insert(key, self.t)
+            self.insert_non_full(root, key)
 
-def hash_partition(key, num_partitions):
-    hashed_key = hash(key)
-    partition_index = hashed_key % num_partitions
-    return partition_index
-
-if __name__ == '__main__':
-    t = 3  # B-tree parameter: minimum degree
-    num_in_memory_levels = 2  # Number of levels to keep in memory
-    num_partitions = 3  # Number of disk partitions
-
-    btree = BTree(t)
-    keys = [7, 2, 4, 1, 8, 5, 9, 3, 6]
-    for key in keys:
-        btree.insert(key)
-
-    in_memory_nodes = []
-    disk_partitions = {}
-
-    def traverse(node, level):
-        if level <= num_in_memory_levels:
-            in_memory_nodes.append(node)
+    def insert_non_full(self, node, key):
+        i = len(node.keys) - 1
+        if node.is_leaf:
+            node.keys.append(None)
+            while i >= 0 and key < node.keys[i]:
+                node.keys[i + 1] = node.keys[i]
+                i -= 1
+            node.keys[i + 1] = key
         else:
-            partition_index = hash_partition(node.keys[0], num_partitions)
-            if partition_index not in disk_partitions:
-                disk_partitions[partition_index] = []
-            disk_partitions[partition_index].append(node)
+            while i >= 0 and key < node.keys[i]:
+                i -= 1
+            i += 1
+            if len(node.children[i].keys) == (2 * self.t) - 1:
+                node.children[i].add_to_buffer(key)
+                self.insert_non_full(node.children[i], key)  # 继续插入键到节点中
+                if len(node.children[i].buffer) == (2 * self.t) - 1:
+                    node.children[i].flush_buffer()
+                    self.split_child(node, i)
+            else:
+                self.insert_non_full(node.children[i], key)
+
+    def split_child(self, node, i):
+        t = self.t
+        child = node.children[i]
+        new_child = BTreeNode(child.is_leaf)
+        node.children.insert(i + 1, new_child)
+        node.keys.insert(i, child.keys[t - 1])
+
+        new_child.keys = child.keys[t:(2 * t) - 1]
+        child.keys = child.keys[0:t - 1]
+
+        if not child.is_leaf:
+            new_child.children = child.children[t:2 * t]
+            child.children = child.children[0:t]
+
+    def print_buffered_keys(self):
+        print("Buffered keys in BTree:")
+        self._print_buffered_keys(self.root)
+
+    def _print_buffered_keys(self, node):
+        if node is None:
+            return
+
+        if node.buffer:
+            print(f"Node keys: {node.keys}, Buffered keys: {node.buffer}")
 
         if not node.is_leaf:
             for child in node.children:
-                traverse(child, level + 1)
+                self._print_buffered_keys(child)
 
-    # Perform B-tree insertion
 
-    # Traverse the tree to populate in-memory nodes and disk partitions
-    traverse(btree.root, 1)
+B_tree = BTree(3, 4)
 
-    # In-memory nodes
-    print("In-memory nodes:")
-    for node in in_memory_nodes:
-        node.print_node()
-
-    # Disk partitions
-    print("Disk partitions:")
-    for partition_index, nodes in disk_partitions.items():
-        print("Partition", partition_index)
-        for node in nodes:
-            node.print_node()
+keys = [10, 20, 5, 6, 12, 30, 7, 17]
+for key in keys:
+    B_tree.insert(key)
+    B_tree.print_buffered_keys()
+B_tree.traverse(max_level=2)
